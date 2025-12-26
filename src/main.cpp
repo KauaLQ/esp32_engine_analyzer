@@ -58,7 +58,10 @@ typedef struct {
     float vibration;
 } measurement_t;
 
+// utilitários do freeRTOS
 QueueHandle_t measurementQueue;
+EventGroupHandle_t systemEvents;
+#define TIME_SYNC_OK_BIT (1 << 0)
 
 // funções auxiliares
 float mcpToVoltage(int32_t adc, float gain, uint8_t resolution);
@@ -68,6 +71,7 @@ float measureVoltageRMS();
 int sendMeasurements(float temperature, float current, float voltage, float vibration);
 
 // Tasks RTOS
+void timeTask(void *parameter);
 void sensorTask(void *parameter);
 void networkTask(void *parameter);
 
@@ -137,16 +141,6 @@ void setup() {
   Serial.print("IP: ");
   Serial.println(WiFi.localIP());
 
-  configTime(GMT_OFFSET_SEC, DAYLIGHT_OFFSET_SEC, NTP_SERVER);
-
-  Serial.print("Sincronizando horário");
-  struct tm timeinfo;
-  while (!getLocalTime(&timeinfo)) {
-    Serial.print(".");
-    delay(500);
-  }
-  Serial.println("\nHorário sincronizado!");
-
   measurementQueue = xQueueCreate(5, sizeof(measurement_t));
 
   if (measurementQueue == NULL) {
@@ -154,8 +148,42 @@ void setup() {
       while (1);
   }
 
+  systemEvents = xEventGroupCreate();
+
+  if (systemEvents == NULL) {
+      Serial.println("Erro ao criar EventGroup!");
+      while (1);
+  }
+
+  xTaskCreatePinnedToCore(timeTask, "Time Task", 2048, NULL, 1, NULL, 1);
   xTaskCreatePinnedToCore(sensorTask, "Sensor Task", 4096, NULL, 2, NULL,0);
   xTaskCreatePinnedToCore(networkTask, "Network Task", 6144, NULL, 1, NULL, 1);
+}
+
+void timeTask(void *parameter) {
+    configTime(
+        GMT_OFFSET_SEC,
+        DAYLIGHT_OFFSET_SEC,
+        "pool.ntp.org",
+        "time.nist.gov",
+        "time.google.com"
+    );
+
+    struct tm timeinfo;
+
+    while (true) {
+        if (getLocalTime(&timeinfo)) {
+            Serial.println("Horário sincronizado!");
+
+            // Sinaliza para o sistema que o tempo está OK
+            xEventGroupSetBits(systemEvents, TIME_SYNC_OK_BIT);
+
+            vTaskDelete(NULL); // task cumpriu sua missão
+        }
+
+        Serial.println("Tentando sincronizar horário...");
+        vTaskDelay(pdMS_TO_TICKS(500));
+    }
 }
 
 void sensorTask(void *parameter) {
@@ -182,6 +210,18 @@ void sensorTask(void *parameter) {
 
 void networkTask(void *parameter) {
     measurement_t data;
+
+    // Espera o tempo estar sincronizado
+    Serial.println("[NETWORK] Aguardando sincronização do horário...");
+    xEventGroupWaitBits(
+        systemEvents,
+        TIME_SYNC_OK_BIT,
+        pdFALSE,   // não limpa o bit
+        pdTRUE,    // espera todos os bits (só temos um)
+        portMAX_DELAY
+    );
+
+    Serial.println("[NETWORK] Horário OK, iniciando envios!");
 
     while (true) {
         if (xQueueReceive(measurementQueue, &data, portMAX_DELAY)) {
@@ -237,7 +277,7 @@ float measureACCurrentRMS() {
 
         sumSquares += i_inst * i_inst;
 
-        delay(AC_SAMPLE_DELAY);
+        vTaskDelay(AC_SAMPLE_DELAY);
     }
 
     return sqrt(sumSquares / AC_SAMPLES);
@@ -255,10 +295,15 @@ float measureVoltageRMS() {
 
         sumSquares += v_sec * v_sec;
 
-        delay(TRAFO_SAMPLE_DELAY);
+        vTaskDelay(TRAFO_SAMPLE_DELAY);
     }
-
-    float vrms_half = sqrt(sumSquares / TRAFO_SAMPLES);
+    
+    // evita erro associado ao offset de 0V
+    if (sumSquares <= 1.0){
+      return 0.0;
+    }
+    
+    float vrms_half = sqrt(sumSquares / TRAFO_SAMPLES) + 0.7;
 
     // reconstrói a senoide original
     float vrms_primary = vrms_half * TRAFO_RATIO * sqrt(2.0);
