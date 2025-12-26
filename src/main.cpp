@@ -51,12 +51,25 @@ Adafruit_BME280 bme;    // sensor de temperatura
 TwoWire I2C_1 = TwoWire(0);
 TwoWire I2C_2 = TwoWire(1);
 
+typedef struct {
+    float temperature;
+    float current;
+    float voltage;
+    float vibration;
+} measurement_t;
+
+QueueHandle_t measurementQueue;
+
 // funções auxiliares
 float mcpToVoltage(int32_t adc, float gain, uint8_t resolution);
 float measureACSOffset();
 float measureACCurrentRMS();
 float measureVoltageRMS();
-void sendMeasurements(float temperature, float current, float voltage, float vibration);
+int sendMeasurements(float temperature, float current, float voltage, float vibration);
+
+// Tasks RTOS
+void sensorTask(void *parameter);
+void networkTask(void *parameter);
 
 void setup() {
   Serial.begin(115200); 
@@ -133,30 +146,55 @@ void setup() {
     delay(500);
   }
   Serial.println("\nHorário sincronizado!");
+
+  measurementQueue = xQueueCreate(5, sizeof(measurement_t));
+
+  if (measurementQueue == NULL) {
+      Serial.println("Erro ao criar a fila!");
+      while (1);
+  }
+
+  xTaskCreatePinnedToCore(sensorTask, "Sensor Task", 4096, NULL, 2, NULL,0);
+  xTaskCreatePinnedToCore(networkTask, "Network Task", 6144, NULL, 1, NULL, 1);
 }
-    
+
+void sensorTask(void *parameter) {
+    measurement_t data;
+
+    while (true) {
+        data.current     = measureACCurrentRMS();
+        data.voltage     = measureVoltageRMS();
+        data.temperature = bme.readTemperature();
+        data.vibration   = 0.87; // placeholder
+
+        Serial.printf(
+            "[CORE 0] V=%.1f | I=%.3f | T=%.2f\n",
+            data.voltage,
+            data.current,
+            data.temperature
+        );
+
+        xQueueSend(measurementQueue, &data, portMAX_DELAY);
+
+        vTaskDelay(pdMS_TO_TICKS(1000));
+    }
+}
+
+void networkTask(void *parameter) {
+    measurement_t data;
+
+    while (true) {
+        if (xQueueReceive(measurementQueue, &data, portMAX_DELAY)) {
+            int httpResponseCode = sendMeasurements(data.temperature, data.current, data.voltage, data.vibration);
+
+            Serial.printf("[CORE 1] Resposta HTTP: %d\n", httpResponseCode);
+        }
+    }
+}
+
+// ********************************* SUPER LOOP VAZIO > TUDO RODA EM RTOS *********************************
 void loop() {
-    int32_t adc1 = mcp1.readADC();
-    int32_t adc2 = mcp2.readADC();
-
-    float v1 = mcpToVoltage(adc1, 1.0, RESOLUTION_MCP);
-    float v2 = mcpToVoltage(adc2, 1.0, RESOLUTION_MCP);
-
-    float realV1 = v1 / DIVISOR_TRAFO_GAIN;
-    float realV2 = v2 / DIVISOR_GAIN;
-
-    float currentRMS = measureACCurrentRMS();
-    float voltageRMS = measureVoltageRMS();
-    float temperature = bme.readTemperature();
-
-    // vibração genérica (placeholder)
-    float vibrationFake = 0.87;
-
-    Serial.printf("MCP1: %.6f V -> %.1f V | MCP2: %.6f V -> %.3f A | BME: %.2f °C\n", realV1, voltageRMS, realV2, currentRMS, temperature);
-
-    sendMeasurements(temperature, currentRMS, voltageRMS, vibrationFake);
-
-    delay(1000);
+    vTaskDelay(portMAX_DELAY);
 }
 
 float mcpToVoltage(int32_t adc, float gain, uint8_t resolution) {
@@ -213,7 +251,7 @@ float measureVoltageRMS() {
         float v_adc = mcpToVoltage(adc, 1.0, RESOLUTION_MCP);
 
         // tensão após divisor (lado secundário do trafo)
-        float v_sec = (v_adc / DIVISOR_TRAFO_GAIN) + 0.7;
+        float v_sec = (v_adc / DIVISOR_TRAFO_GAIN);
 
         sumSquares += v_sec * v_sec;
 
@@ -239,10 +277,10 @@ String getISOTimestamp() {
     return String(buffer);
 }
 
-void sendMeasurements(float temperature, float current, float voltage, float vibration) {
+int sendMeasurements(float temperature, float current, float voltage, float vibration) {
     if (WiFi.status() != WL_CONNECTED) {
         Serial.println("WiFi desconectado!");
-        return;
+        return -999;
     }
 
     HTTPClient http;
@@ -263,12 +301,7 @@ void sendMeasurements(float temperature, float current, float voltage, float vib
 
     int httpResponseCode = http.POST(payload);
 
-    Serial.print("HTTP Response: ");
-    Serial.println(httpResponseCode);
-
-    if (httpResponseCode > 0) {
-        Serial.println(http.getString());
-    }
-
     http.end();
+
+    return httpResponseCode;
 }
