@@ -19,6 +19,13 @@
 #define AC_SAMPLE_DELAY 4     // ms (aprox. 240 SPS)
 float acsOffset = 2.5;        // sem calibração o offset padrão é 2.5
 
+// definições do trafo sensor de tensão
+#define TRAFO_SAMPLES 100
+#define TRAFO_RATIO (220.0 / 13.0)
+#define DIVISOR_TRAFO_GAIN (1.0/11.0)
+#define TRAFO_SAMPLE_DELAY 4
+
+// definições do ADC externo
 #define GAIN_MCP GAIN_1X
 #define RESOLUTION_MCP RESOLUTION_12_BIT
 #define MODE_MCP MODE_CONTINUOUS
@@ -35,6 +42,7 @@ float mcpToVoltage(int32_t adc, float gain, uint8_t resolution);
 float measureACSOffset();
 float measureACCurrentRMS();
 void printValuesBME();
+float measureVoltageRMS();
 
 void setup() {
   Serial.begin(115200); 
@@ -98,12 +106,13 @@ void loop() {
     float v1 = mcpToVoltage(adc1, 1.0, RESOLUTION_MCP);
     float v2 = mcpToVoltage(adc2, 1.0, RESOLUTION_MCP);
 
-    float realV1 = v1 / DIVISOR_GAIN;
+    float realV1 = v1 / DIVISOR_TRAFO_GAIN;
     float realV2 = v2 / DIVISOR_GAIN;
 
     float currentRMS = measureACCurrentRMS();
+    float voltageRMS = measureVoltageRMS();
 
-    Serial.printf("MCP1: %.6f V | MCP2: %.6f V -> %.3f A\n", realV1, realV2, currentRMS);
+    Serial.printf("MCP1: %.6f V -> %.1f V | MCP2: %.6f V -> %.3f A\n", realV1, voltageRMS, realV2, currentRMS);
     
     printValuesBME();
     delay(1000);
@@ -153,6 +162,29 @@ float measureACCurrentRMS() {
     }
 
     return sqrt(sumSquares / AC_SAMPLES);
+}
+
+float measureVoltageRMS() {
+    float sumSquares = 0;
+
+    for (int i = 0; i < TRAFO_SAMPLES; i++) {
+        int32_t adc = mcp1.readADC();
+        float v_adc = mcpToVoltage(adc, 1.0, RESOLUTION_MCP);
+
+        // tensão após divisor (lado secundário do trafo)
+        float v_sec = (v_adc / DIVISOR_TRAFO_GAIN) + 0.7;
+
+        sumSquares += v_sec * v_sec;
+
+        delay(TRAFO_SAMPLE_DELAY);
+    }
+
+    float vrms_half = sqrt(sumSquares / TRAFO_SAMPLES);
+
+    // reconstrói a senoide original
+    float vrms_primary = vrms_half * TRAFO_RATIO * sqrt(2.0);
+
+    return vrms_primary;
 }
 
 void printValuesBME() {
