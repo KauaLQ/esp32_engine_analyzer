@@ -1,9 +1,13 @@
-// breakout: sda1 scl1 v+1 vcc gnd v+2 scl2 sda2 
+// breakout MCP3421: sda1 scl1 v+1 vcc gnd v+2 scl2 sda2 
 #include <Arduino.h>
 #include <Wire.h>
 #include <Adafruit_MCP3421.h>
 #include <Adafruit_Sensor.h>
 #include <Adafruit_BME280.h>
+#include <WiFi.h>
+#include <HTTPClient.h>
+#include <ArduinoJson.h>
+#include <time.h>
 
 #define SCL1 9
 #define SDA1 8
@@ -20,7 +24,7 @@
 float acsOffset = 2.5;        // sem calibração o offset padrão é 2.5
 
 // definições do trafo sensor de tensão
-#define TRAFO_SAMPLES 100
+#define TRAFO_SAMPLES 120
 #define TRAFO_RATIO (220.0 / 13.0)
 #define DIVISOR_TRAFO_GAIN (1.0/11.0)
 #define TRAFO_SAMPLE_DELAY 4
@@ -29,6 +33,16 @@ float acsOffset = 2.5;        // sem calibração o offset padrão é 2.5
 #define GAIN_MCP GAIN_1X
 #define RESOLUTION_MCP RESOLUTION_12_BIT
 #define MODE_MCP MODE_CONTINUOUS
+
+// definições do wifi e API
+#define WIFI_SSID     "CLEUDO"
+#define WIFI_PASSWORD "91898487"
+#define API_URL "http://192.168.1.100:3080/api/measurements"
+
+// definições do timestamp
+#define NTP_SERVER "pool.ntp.org"
+#define GMT_OFFSET_SEC (-3 * 3600)
+#define DAYLIGHT_OFFSET_SEC 0
 
 Adafruit_MCP3421 mcp1;  // adc externo 1
 Adafruit_MCP3421 mcp2;  // adc externo 2
@@ -41,8 +55,8 @@ TwoWire I2C_2 = TwoWire(1);
 float mcpToVoltage(int32_t adc, float gain, uint8_t resolution);
 float measureACSOffset();
 float measureACCurrentRMS();
-void printValuesBME();
 float measureVoltageRMS();
+void sendMeasurements(float temperature, float current, float voltage, float vibration);
 
 void setup() {
   Serial.begin(115200); 
@@ -68,7 +82,7 @@ void setup() {
     }
   }
 
-  if (! bme.begin(0x76, &I2C_1)) {
+  if (!bme.begin(0x76, &I2C_1)) {
     Serial.println("Não foi possível encontrar o sensor BME280!");
     while (1){
       delay(10);
@@ -97,6 +111,28 @@ void setup() {
   );
 
   acsOffset = measureACSOffset(); // calibração do zero do ACS712
+
+  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+  Serial.print("Conectando ao WiFi");
+
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+
+  Serial.println("\nWiFi conectado!");
+  Serial.print("IP: ");
+  Serial.println(WiFi.localIP());
+
+  configTime(GMT_OFFSET_SEC, DAYLIGHT_OFFSET_SEC, NTP_SERVER);
+
+  Serial.print("Sincronizando horário");
+  struct tm timeinfo;
+  while (!getLocalTime(&timeinfo)) {
+    Serial.print(".");
+    delay(500);
+  }
+  Serial.println("\nHorário sincronizado!");
 }
     
 void loop() {
@@ -111,10 +147,15 @@ void loop() {
 
     float currentRMS = measureACCurrentRMS();
     float voltageRMS = measureVoltageRMS();
+    float temperature = bme.readTemperature();
 
-    Serial.printf("MCP1: %.6f V -> %.1f V | MCP2: %.6f V -> %.3f A\n", realV1, voltageRMS, realV2, currentRMS);
-    
-    printValuesBME();
+    // vibração genérica (placeholder)
+    float vibrationFake = 0.87;
+
+    Serial.printf("MCP1: %.6f V -> %.1f V | MCP2: %.6f V -> %.3f A | BME: %.2f °C\n", realV1, voltageRMS, realV2, currentRMS, temperature);
+
+    sendMeasurements(temperature, currentRMS, voltageRMS, vibrationFake);
+
     delay(1000);
 }
 
@@ -187,10 +228,47 @@ float measureVoltageRMS() {
     return vrms_primary;
 }
 
-void printValuesBME() {
-    Serial.print("temperatura = ");
-    Serial.print(bme.readTemperature());
-    Serial.println(" *C");
+String getISOTimestamp() {
+    struct tm timeinfo;
+    if (!getLocalTime(&timeinfo)) {
+        return "1970-01-01T00:00:00Z";
+    }
 
-    Serial.println();
+    char buffer[25];
+    strftime(buffer, sizeof(buffer), "%Y-%m-%dT%H:%M:%SZ", &timeinfo);
+    return String(buffer);
+}
+
+void sendMeasurements(float temperature, float current, float voltage, float vibration) {
+    if (WiFi.status() != WL_CONNECTED) {
+        Serial.println("WiFi desconectado!");
+        return;
+    }
+
+    HTTPClient http;
+    http.begin(API_URL);
+    http.addHeader("Content-Type", "application/json");
+
+    JsonDocument doc;
+
+    doc["device_id"] = "motor_teste";
+    doc["timestamp"] = getISOTimestamp();
+    doc["temperature"] = temperature;
+    doc["current"]     = current;
+    doc["voltage"]     = voltage;
+    doc["vibration"]   = vibration; // dado genérico
+
+    String payload;
+    serializeJson(doc, payload);
+
+    int httpResponseCode = http.POST(payload);
+
+    Serial.print("HTTP Response: ");
+    Serial.println(httpResponseCode);
+
+    if (httpResponseCode > 0) {
+        Serial.println(http.getString());
+    }
+
+    http.end();
 }
