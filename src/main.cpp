@@ -8,6 +8,8 @@
 #include <HTTPClient.h>
 #include <ArduinoJson.h>
 #include <time.h>
+#include <ESPAsyncWebServer.h>
+#include <AsyncTCP.h>
 
 #define SCL1 9
 #define SDA1 8
@@ -44,6 +46,9 @@ float acsOffset = 2.5;        // sem calibração o offset padrão é 2.5
 #define GMT_OFFSET_SEC (-3 * 3600)
 #define DAYLIGHT_OFFSET_SEC 0
 
+// server local do esp
+AsyncWebServer server(80);
+
 Adafruit_MCP3421 mcp1;  // adc externo 1
 Adafruit_MCP3421 mcp2;  // adc externo 2
 Adafruit_BME280 bme;    // sensor de temperatura
@@ -61,6 +66,8 @@ typedef struct {
 // utilitários do freeRTOS
 QueueHandle_t measurementQueue;
 EventGroupHandle_t systemEvents;
+SemaphoreHandle_t dataMutex;
+measurement_t latestMeasurement;
 #define TIME_SYNC_OK_BIT (1 << 0)
 
 // funções auxiliares
@@ -74,6 +81,7 @@ int sendMeasurements(float temperature, float current, float voltage, float vibr
 void timeTask(void *parameter);
 void sensorTask(void *parameter);
 void networkTask(void *parameter);
+void webServerTask(void *parameter);
 
 void setup() {
   Serial.begin(115200); 
@@ -155,9 +163,17 @@ void setup() {
       while (1);
   }
 
+  dataMutex = xSemaphoreCreateMutex();
+
+  if (dataMutex == NULL) {
+      Serial.println("Erro ao criar mutex!");
+      while (1);
+  }
+
   xTaskCreatePinnedToCore(timeTask, "Time Task", 2048, NULL, 1, NULL, 1);
   xTaskCreatePinnedToCore(sensorTask, "Sensor Task", 4096, NULL, 2, NULL,0);
   xTaskCreatePinnedToCore(networkTask, "Network Task", 6144, NULL, 1, NULL, 1);
+  xTaskCreatePinnedToCore(webServerTask, "Web Server Task", 4096, NULL, 1, NULL, 1);
 }
 
 void timeTask(void *parameter) {
@@ -202,6 +218,10 @@ void sensorTask(void *parameter) {
             data.temperature
         );
 
+        xSemaphoreTake(dataMutex, portMAX_DELAY);
+        latestMeasurement = data;
+        xSemaphoreGive(dataMutex);
+
         xQueueSend(measurementQueue, &data, portMAX_DELAY);
 
         vTaskDelay(pdMS_TO_TICKS(1000));
@@ -230,6 +250,40 @@ void networkTask(void *parameter) {
             Serial.printf("[CORE 1] Resposta HTTP: %d\n", httpResponseCode);
         }
     }
+}
+
+void webServerTask(void *parameter) {
+    server.on("/", HTTP_GET, [](AsyncWebServerRequest *request){
+        request->send(200, "text/html",
+            "<h1>ESP32 Online</h1>"
+            "<p>Servidor de configuracoes</p>"
+        );
+    });
+
+    server.on("/api/status", HTTP_GET, [](AsyncWebServerRequest *request){
+        measurement_t data;
+
+        xSemaphoreTake(dataMutex, portMAX_DELAY);
+        data = latestMeasurement;
+        xSemaphoreGive(dataMutex);
+
+        JsonDocument doc;
+        doc["temperature"] = data.temperature;
+        doc["current"]     = data.current;
+        doc["voltage"]     = data.voltage;
+        doc["vibration"]   = data.vibration;
+
+        String response;
+        serializeJson(doc, response);
+
+        request->send(200, "application/json", response);
+    });
+
+    server.begin();
+
+    Serial.println("[WEB] Servidor web iniciado");
+
+    vTaskDelete(NULL); // async → não precisa loop
 }
 
 // ********************************* SUPER LOOP VAZIO > TUDO RODA EM RTOS *********************************
