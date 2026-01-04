@@ -1,122 +1,157 @@
-# Rotoral Frontend
+<img width=100% src="https://capsule-render.vercel.app/api?type=waving&color=E66C07&height=120&section=header"/>
 
-A modern React dashboard for monitoring industrial motors and devices. This frontend application is completely decoupled from the backend and communicates with it through a REST API.
+# Rotorial Frontend — Dashboard (React + Vite)
 
-## Features
+Este diretório contém o **frontend** do Rotorial: uma aplicação web (dashboard) para monitoramento de motores e dispositivos industriais. A aplicação é desacoplada do backend e se comunica via **API REST**.
 
-- View a list of all devices/motors
-- Search and filter devices by name or location
-- View detailed information about each device
-- Real-time monitoring of device measurements
-- Interactive charts for visualizing measurement data
-- Alerts for abnormal measurements
-- Dark/light mode toggle
+---
 
-## Tech Stack
+## ✅ Principais Funcionalidades
 
-- **React + Vite**: Fast and modern frontend tooling
-- **TypeScript**: Type-safe code
-- **Mantine UI**: Component library for all visual elements
-- **Recharts**: Chart library for data visualization
-- **React Router**: For navigation between pages
-- **Axios**: For API requests
+- Listagem de dispositivos/motores
+- Busca e filtros por nome e/ou localização
+- Página de detalhes por dispositivo
+- Monitoramento (quase) em tempo real de medições
+- Gráficos interativos para visualização de dados
+- Alertas para medições fora do esperado
+- Alternância de tema (dark/light)
 
-## Project Structure
+---
+
+## 🧩 Stack / Tecnologias
+
+- **React + Vite**: toolchain moderna e rápida
+- **TypeScript**: tipagem estática
+- **Mantine UI**: biblioteca de componentes e design system
+- **Recharts**: gráficos e visualização
+- **React Router**: roteamento de páginas
+- **Axios**: consumo da API
+
+---
+
+## 🗂️ Estrutura do Projeto
 
 ```
 src/
-├── components/         # Reusable UI components
+├── components/         # Componentes reutilizáveis de UI
 │   ├── DeviceCard.tsx
 │   ├── MeasurementsChart.tsx
 │   └── MeasurementsTable.tsx
-├── layout/             # Layout components
+├── layout/             # Componentes de layout
 │   └── MainLayout.tsx
-├── routes/             # Page components
+├── routes/             # Páginas/rotas
 │   ├── DeviceListPage.tsx
 │   └── DeviceDetailsPage.tsx
-├── services/           # API services
+├── services/           # Serviços de API
 │   └── api.ts
-├── App.tsx             # Main application component
+├── App.tsx             # Componente raiz
 └── main.tsx            # Entry point
 ```
 
-## Getting Started
+---
 
-### Prerequisites
+## ▶️ Como rodar (sem Docker)
 
-- Node.js (v16 or later)
-- npm or yarn
+### Pré-requisitos
 
-### Installation
+- Node.js **v16+**
+- npm ou yarn
 
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/yourusername/rotoral-frontend.git
-   cd rotoral-frontend
-   ```
+### Instalação e execução
 
-2. Install dependencies:
-   ```bash
-   npm install
-   ```
+1) Instalar dependências:
 
-3. Create a `.env` file in the root directory with the following content:
-   ```
-   VITE_API_BASE_URL=http://your-backend-api-url
-   ```
+```bash
+npm install
+```
 
-   Note: If you don't set this, the app will default to `http://localhost:5000` and use mock data if the API is not available.
+2) Criar arquivo `.env` na raiz do projeto:
 
-4. Start the development server:
-   ```bash
-   npm run dev
-   ```
+```bash
+VITE_API_BASE_URL=http://seu-backend-api-url
+```
 
-5. Open your browser and navigate to `http://localhost:5173`
+> Observação: se `VITE_API_BASE_URL` não for definido, a aplicação irá o usar o nosso backend atual: https://rotorial-backend.onrender.com
 
-## Building for Production
+3) Iniciar o servidor de desenvolvimento:
 
-To build the application for production:
+```bash
+npm run dev
+```
+
+A aplicação ficará disponível em:
+
+- `http://localhost:5173`
+
+---
+
+## 🏗️ Build para produção
+
+Para gerar o build de produção:
 
 ```bash
 npm run build
 ```
 
-The built files will be in the `dist` directory.
+Os artefatos serão gerados em `dist/`.
 
-## Customization
+Opcional (preview local do build):
 
-### API Configuration
-
-The API base URL can be configured in the `.env` file:
-
-```
-VITE_API_BASE_URL=http://your-backend-api-url
+```bash
+npm run preview
 ```
 
-### Alert Thresholds
+---
 
-You can adjust the alert thresholds in `src/routes/DeviceDetailsPage.tsx`:
+## ⚙️ Configurações
 
-```typescript
+### Base URL da API
+
+A URL base é configurada via variável de ambiente:
+
+```bash
+VITE_API_BASE_URL=http://seu-backend-api-url
+```
+
+### Thresholds de alertas (exemplo)
+
+Os limiares de alerta podem ser ajustados no código da página de detalhes (exemplo):
+
+```ts
 const TEMPERATURE_THRESHOLD = 60; // °C
 const CURRENT_THRESHOLD = 12; // A
 ```
 
-### Theme Customization
+### Tema (Mantine)
 
-The Mantine theme can be customized in `src/App.tsx`:
+O tema pode ser customizado no arquivo raiz da aplicação (exemplo):
 
-```typescript
+```ts
 const theme = createTheme({
   primaryColor: 'blue',
   colors: {
-    // Customize colors here
+    // Customize cores aqui
   },
-  // Other theme options
 });
 ```
 
-## Mock Data
+---
 
-The application includes mock data for development and testing purposes. If the API is not available, the app will automatically fall back to using mock data.
+## 🧪 Mock Data
+
+O projeto inclui dados simulados (**mock data**) para desenvolvimento e testes. Caso a API não esteja acessível, a aplicação pode alternar automaticamente para mock data (conforme implementação do projeto).
+
+---
+
+## 🧯 Troubleshooting
+
+- **Tela sem dados / falha ao carregar**
+  - Verificar `VITE_API_BASE_URL` e se o backend está acessível.
+- **CORS / bloqueio no navegador**
+  - Verificar configuração de CORS no backend e a URL utilizada no frontend.
+- **Erros ao instalar dependências**
+  - Confirmar Node.js v16+ e remover `node_modules/` + reinstalar.
+
+---
+
+<img width=100% src="https://capsule-render.vercel.app/api?type=waving&color=E66C07&height=120&section=footer"/>
