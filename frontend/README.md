@@ -113,15 +113,6 @@ A URL base é configurada via variável de ambiente:
 VITE_API_BASE_URL=http://seu-backend-api-url
 ```
 
-### Thresholds de alertas (exemplo)
-
-Os limiares de alerta podem ser ajustados no código da página de detalhes (exemplo):
-
-```ts
-const TEMPERATURE_THRESHOLD = 60; // °C
-const CURRENT_THRESHOLD = 12; // A
-```
-
 ### Tema (Mantine)
 
 O tema pode ser customizado no arquivo raiz da aplicação (exemplo):
