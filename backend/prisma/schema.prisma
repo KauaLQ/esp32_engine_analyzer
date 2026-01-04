@@ -1,0 +1,285 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model alarms {
+  id                              String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenant_id                       String?        @db.Uuid
+  machine_id                      String         @db.Uuid
+  type                            String
+  severity                        alarm_severity
+  status                          alarm_status   @default(open)
+  title                           String
+  details                         Json           @default("{}")
+  opened_at                       DateTime       @default(now()) @db.Timestamptz(6)
+  last_seen_at                    DateTime       @default(now()) @db.Timestamptz(6)
+  ack_at                          DateTime?      @db.Timestamptz(6)
+  closed_at                       DateTime?      @db.Timestamptz(6)
+  assigned_to                     String?        @db.Uuid
+  ack_by                          String?        @db.Uuid
+  closed_by                       String?        @db.Uuid
+  dedupe_key                      String?
+  users_alarms_ack_byTousers      users?         @relation("alarms_ack_byTousers", fields: [ack_by], references: [id], onUpdate: NoAction)
+  users_alarms_assigned_toTousers users?         @relation("alarms_assigned_toTousers", fields: [assigned_to], references: [id], onUpdate: NoAction)
+  users_alarms_closed_byTousers   users?         @relation("alarms_closed_byTousers", fields: [closed_by], references: [id], onUpdate: NoAction)
+  machines                        machines       @relation(fields: [machine_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  tenants                         tenants?       @relation(fields: [tenant_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([machine_id, dedupe_key, status], map: "alarms_dedupe_open_uniq")
+  @@index([machine_id, status, severity], map: "alarms_machine_status_sev_idx")
+  @@index([tenant_id, opened_at(sort: Desc)], map: "alarms_tenant_opened_idx")
+}
+
+model audit_log {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenant_id   String?  @db.Uuid
+  at          DateTime @default(now()) @db.Timestamptz(6)
+  actor_user  String?  @db.Uuid
+  action      String
+  entity_type String?
+  entity_id   String?  @db.Uuid
+  meta        Json     @default("{}")
+  users       users?   @relation(fields: [actor_user], references: [id], onUpdate: NoAction)
+  tenants     tenants? @relation(fields: [tenant_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([tenant_id, at(sort: Desc)], map: "audit_tenant_at_idx")
+}
+
+model devices {
+  id                 String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenant_id          String?              @db.Uuid
+  machine_id         String?              @db.Uuid
+  device_id          String               @unique(map: "devices_device_id_uniq")
+  fw_version         String?
+  status             device_status        @default(provisioning)
+  last_seen_at       DateTime?            @db.Timestamptz(6)
+  paired_at          DateTime?            @db.Timestamptz(6)
+  created_at         DateTime             @default(now()) @db.Timestamptz(6)
+  updated_at         DateTime             @default(now()) @db.Timestamptz(6)
+  machines           machines?            @relation(fields: [machine_id], references: [id], onUpdate: NoAction)
+  tenants            tenants?             @relation(fields: [tenant_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  telemetry_readings telemetry_readings[]
+
+  @@index([machine_id], map: "devices_machine_idx")
+}
+
+model emission_factors {
+  id                   String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenant_id            String?  @db.Uuid
+  machine_id           String   @db.Uuid
+  name                 String   @default("default")
+  factor_kgco2_per_kwh Decimal  @db.Decimal
+  source               String?
+  updated_by           String?  @db.Uuid
+  updated_at           DateTime @default(now()) @db.Timestamptz(6)
+  machines             machines @relation(fields: [machine_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  tenants              tenants? @relation(fields: [tenant_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users                users?   @relation(fields: [updated_by], references: [id], onUpdate: NoAction)
+
+  @@unique([machine_id, name], map: "emission_factors_machine_name_uniq")
+}
+
+model machines {
+  id                         String                       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenant_id                  String?                      @db.Uuid
+  patio_id                   String?                      @db.Uuid
+  machine_key                String                       @unique(map: "machines_machine_key_uniq")
+  model                      String
+  manufacturer               String
+  status                     machine_status               @default(operante)
+  operator_user_id           String?                      @db.Uuid
+  meta                       Json                         @default("{}")
+  created_at                 DateTime                     @default(now()) @db.Timestamptz(6)
+  updated_at                 DateTime                     @default(now()) @db.Timestamptz(6)
+  alarms                     alarms[]
+  devices                    devices[]
+  emission_factors           emission_factors[]
+  users                      users?                       @relation(fields: [operator_user_id], references: [id], onUpdate: NoAction)
+  patios                     patios?                      @relation(fields: [patio_id], references: [id], onUpdate: NoAction)
+  tenants                    tenants?                     @relation(fields: [tenant_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  telemetry_readings         telemetry_readings[]
+  machine_threshold_profiles machine_threshold_profiles[]
+
+  @@index([operator_user_id], map: "machines_operator_idx")
+  @@index([patio_id], map: "machines_patio_idx")
+  @@index([tenant_id], map: "machines_tenant_idx")
+}
+
+model patios {
+  id         String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenant_id  String?    @db.Uuid
+  name       String
+  address    String?
+  created_at DateTime   @default(now()) @db.Timestamptz(6)
+  updated_at DateTime   @default(now()) @db.Timestamptz(6)
+  machines   machines[]
+  tenants    tenants?   @relation(fields: [tenant_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([tenant_id, name], map: "patios_tenant_name_uniq")
+}
+
+model refresh_tokens {
+  id                   String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id              String           @db.Uuid
+  token_hash           String
+  created_at           DateTime         @default(now()) @db.Timestamptz(6)
+  expires_at           DateTime         @db.Timestamptz(6)
+  revoked_at           DateTime?        @db.Timestamptz(6)
+  replaced_by_id       String?          @db.Uuid
+  user_agent           String?
+  ip                   String?          @db.Inet
+  refresh_tokens       refresh_tokens?  @relation("refresh_tokensTorefresh_tokens", fields: [replaced_by_id], references: [id], onUpdate: NoAction)
+  other_refresh_tokens refresh_tokens[] @relation("refresh_tokensTorefresh_tokens")
+  users                users            @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([user_id, token_hash], map: "refresh_tokens_user_tokenhash_uniq")
+  @@index([expires_at], map: "refresh_tokens_expires_idx")
+  @@index([user_id], map: "refresh_tokens_user_idx")
+}
+
+model telemetry_readings {
+  id         BigInt   @id @default(autoincrement())
+  tenant_id  String?  @db.Uuid
+  machine_id String   @db.Uuid
+  device_id  String?  @db.Uuid
+  ts         DateTime @db.Timestamptz(6)
+  seq        Int?
+  payload    Json     @default("{}")
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+  devices    devices? @relation(fields: [device_id], references: [id], onUpdate: NoAction)
+  machines   machines @relation(fields: [machine_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  tenants    tenants? @relation(fields: [tenant_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([machine_id, ts(sort: Desc)], map: "telemetry_machine_ts_idx")
+  @@index([tenant_id, ts(sort: Desc)], map: "telemetry_tenant_ts_idx")
+}
+
+model tenants {
+  id                 String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name               String
+  created_at         DateTime             @default(now()) @db.Timestamptz(6)
+  alarms             alarms[]
+  audit_log          audit_log[]
+  devices            devices[]
+  emission_factors   emission_factors[]
+  machines           machines[]
+  patios             patios[]
+  telemetry_readings telemetry_readings[]
+  users              users[]
+
+  machine_threshold_profiles machine_threshold_profiles[]
+}
+
+model users {
+  id                               String                       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenant_id                        String?                      @db.Uuid
+  email                            String                       @db.Citext
+  password_hash                    String
+  full_name                        String?
+  role                             user_role                    @default(operator)
+  status                           user_status                  @default(active)
+  created_at                       DateTime                     @default(now()) @db.Timestamptz(6)
+  updated_at                       DateTime                     @default(now()) @db.Timestamptz(6)
+  last_login_at                    DateTime?                    @db.Timestamptz(6)
+  alarms_alarms_ack_byTousers      alarms[]                     @relation("alarms_ack_byTousers")
+  alarms_alarms_assigned_toTousers alarms[]                     @relation("alarms_assigned_toTousers")
+  alarms_alarms_closed_byTousers   alarms[]                     @relation("alarms_closed_byTousers")
+  audit_log                        audit_log[]
+  emission_factors                 emission_factors[]
+  machines                         machines[]
+  refresh_tokens                   refresh_tokens[]
+  tenants                          tenants?                     @relation(fields: [tenant_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  machine_threshold_profiles       machine_threshold_profiles[]
+
+  @@unique([tenant_id, email], map: "users_tenant_email_uniq")
+}
+
+model machine_threshold_profiles {
+  id         String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenant_id  String? @db.Uuid
+  machine_id String  @db.Uuid
+
+  mode    threshold_mode
+  active  Boolean        @default(true)
+  version Int            @default(1)
+
+  // guarda o JSON do n8n ou manual (regime/nominais/thresholds/notes)
+  payload Json @default("{}")
+
+  // opcional mas muito útil
+  ai_request  Json? // { model, query }
+  ai_response Json? // resposta bruta do n8n
+
+  created_by String?  @db.Uuid
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+  updated_at DateTime @default(now()) @db.Timestamptz(6)
+
+  machines machines @relation(fields: [machine_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  tenants  tenants? @relation(fields: [tenant_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users    users?   @relation(fields: [created_by], references: [id], onUpdate: NoAction)
+
+  @@index([machine_id, active], map: "thresholds_machine_active_idx")
+  @@index([tenant_id, created_at(sort: Desc)], map: "thresholds_tenant_created_idx")
+}
+
+enum threshold_mode {
+  MANUAL
+  AI_N8N
+}
+
+enum alarm_severity {
+  info
+  warn
+  crit
+}
+
+enum alarm_status {
+  open
+  ack
+  closed
+}
+
+enum asset_status {
+  ok
+  warn
+  crit
+  offline
+  unknown
+}
+
+enum device_status {
+  provisioning
+  online
+  offline
+  disabled
+}
+
+enum machine_status {
+  operante
+  inoperante
+  manutencao
+}
+
+enum source_kind {
+  DOCUMENT
+  NAMEPLATE
+  ESTIMATED
+  DEFAULT
+  UNKNOWN
+}
+
+enum user_role {
+  admin
+  operator
+  viewer
+}
+
+enum user_status {
+  active
+  disabled
+}
