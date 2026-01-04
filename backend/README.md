@@ -1,101 +1,259 @@
-# Machines Module
+<img width=100% src="https://capsule-render.vercel.app/api?type=waving&color=E66C07&height=120&section=header"/>
 
-This module handles machine registration, device management, and integration with the Telemetry module.
+# Rotorial Backend — API (NestJS + Prisma + Supabase)
 
-## Environment Variables
+Este diretório contém o backend do Rotorial: uma API responsável por autenticação, gestão de máquinas e pátios, ingestão de telemetria, avaliação de thresholds, geração de alarmes e integração com N8N (para automação e sugestão de thresholds baseados em IA).
 
-Make sure to set the following environment variable in your `.env` file:
+---
 
-```
-PROVISIONING_TOKEN=CHANGE_ME_TO_LONG_SECRET
-```
+## 🧩 Stack / Tecnologias
 
-## API Endpoints
+- Linguagem: TypeScript
+- Framework: NestJS
+- ORM: Prisma
+- Banco de Dados: PostgreSQL (via Supabase)
+- Autenticação: JWT (Access Token + Refresh Token com rotação)
+- Containerização e Deploy: Docker + Render.com
+- Integração de IA: N8N (via webhook externo)
 
-### Provisioning Endpoint
+---
 
-This endpoint is used by devices to register themselves and associate with a machine.
+## ✅ Funcionalidades Principais
 
-```bash
-curl -X POST http://localhost:3000/provision \
-  -H "Content-Type: application/json" \
-  -H "x-provision-token: CHANGE_ME_TO_LONG_SECRET" \
-  -d '{
-    "deviceId": "ROTORIAL-ESP32-A1B2C3",
-    "machineKey": "MTR-001",
-    "patioId": "b8b2c7d5-5c76-4f7d-9d03-7ac0c86c3c2f",
-    "manufacturer": "WEG",
-    "model": "W22",
-    "status": "operante",
-    "operatorUserId": "7b09b75a-e013-4d63-a9b6-2bcecd48b4ee",
-    "meta": {
-      "tag": "MTR-001",
-      "powerKw": 15,
-      "voltageNominal": 220,
-      "notes": "Motor da linha 3"
-    },
-    "fwVersion": "1.0.0"
-  }'
-```
+### 🔐 Autenticação
+- Login e logout de usuários internos
+- Rotação de tokens de atualização (refresh token)
+- Perfil autenticado (`/auth/me`)
+- Registro de novos usuários restrito a administradores
 
-### Dashboard Endpoints
+### 🏭 Domínio de Negócio
+- Máquinas: cadastro, consulta, atualização e metadados
+- Pátios: agrupamento e organização de máquinas
+- Telemetria: ingestão e consulta de dados com filtros temporais
+- Alarmes: abertura, confirmação e fechamento, com filtros por severidade e status
+- Thresholds: criação manual e via N8N (IA), com versionamento por máquina
+- Emissões: cálculo de fatores ambientais (ex.: kgCO₂/kWh por máquina)
 
-#### List Machines
+---
 
-```bash
-curl -X GET http://localhost:3000/machines \
-  -H "Authorization: Bearer <ACCESS_TOKEN>"
-```
+## 📦 Execução com Docker
 
-With query parameters:
+> O projeto possui `Dockerfile` configurado. Para execução local, é necessário apenas o arquivo `.env`.
+
+### 1) Configuração do `.env`
+
+Exemplo de conteúdo do arquivo `.env`:
 
 ```bash
-curl -X GET "http://localhost:3000/machines?search=MTR&status=operante&limit=10" \
-  -H "Authorization: Bearer <ACCESS_TOKEN>"
+# Banco (Supabase)
+DATABASE_URL="postgresql://postgres:<SUA_SENHA>@db.iboklssetogmioikemlg.supabase.co:5432/postgres?sslmode=require"
+
+# Supabase
+SUPABASE_URL="https://iboklssetogmioikemlg.supabase.co"
+SUPABASE_KEY="<SUA_SUPABASE_KEY>"
+
+# JWT
+JWT_SECRET="CHANGE_ME_TO_A_LONG_RANDOM_SECRET"
+JWT_EXPIRES_IN_SECONDS=900
+
+# Seed / Provisionamento
+SEED_DEFAULT_ADMIN=true
+PROVISIONING_TOKEN="santoDeus@1"
+
+# Integração N8N
+N8N_TIMEOUT_MS=60000
+N8N_VALIDATE_DEVICE_URL="https://n8n.h-check.com.br:25678/webhook/validate-device"
 ```
 
-#### Get Machine Details
+### 2) Build da imagem
 
 ```bash
-curl -X GET http://localhost:3000/machines/8b70dbcc-5c12-4bf0-a10d-e4e4ef8a2d7e \
-  -H "Authorization: Bearer <ACCESS_TOKEN>"
+docker build -t rotorial-backend .
 ```
 
-#### Update Machine
+### 3) Execução do container
 
 ```bash
-curl -X PATCH http://localhost:3000/machines/8b70dbcc-5c12-4bf0-a10d-e4e4ef8a2d7e \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer <ACCESS_TOKEN>" \
-  -d '{
-    "status": "manutencao",
-    "operatorUserId": "7b09b75a-e013-4d63-a9b6-2bcecd48b4ee",
-    "meta": {
-      "notes": "Em manutenção preventiva"
+docker run --rm -p 3000:3000 --env-file .env rotorial-backend
+```
+
+A API estará disponível em:
+
+- `http://localhost:3000`
+
+---
+
+## 🧪 Execução sem Docker (opcional)
+
+```bash
+npm ci
+npx prisma generate
+npm run build
+npm run start:prod
+```
+
+Para desenvolvimento:
+
+```bash
+npm run start:dev
+```
+
+---
+
+## 🗃️ Banco de Dados / Prisma (Supabase)
+
+- O `DATABASE_URL` deve incluir `?sslmode=require` para compatibilidade com o Supabase.
+- Em produção, todas as variáveis do `.env` devem ser configuradas no painel do Render.
+- Migrations:
+  - Produção: `prisma migrate deploy`
+  - Desenvolvimento: `prisma migrate dev`
+
+---
+
+## 🔑 Autenticação
+
+### Tokens
+- Access Token (JWT): enviado em `Authorization: Bearer <token>`
+- Refresh Token: armazenado e rotacionado a cada renovação
+
+### Respostas de Erro
+- `401` – Token inválido ou não autenticado
+- `403` – Usuário desabilitado
+
+---
+
+## 📡 Endpoints Principais (resumo)
+
+> Abaixo está um guia rápido. O frontend/firmware devem usar os endpoints definidos no projeto.
+
+### Auth
+
+**POST `/auth/login`**
+Request:
+
+```json
+{ "email": "rotorial@admin.com", "password": "admin" }
+```
+
+Response:
+
+```json
+{
+  "accessToken": "jwt...",
+  "refreshToken": "uuid...",
+  "user": { "id": "uuid", "email": "rotorial@admin.com", "fullName": "Admin", "role": "admin", "status": "active" }
+}
+```
+
+**POST `/auth/refresh`**
+Request:
+
+```json
+{ "refreshToken": "uuid..." }
+```
+
+Response: mesma forma do login, com tokens novos.
+
+**POST `/auth/logout`**
+Request:
+
+```json
+{ "refreshToken": "uuid..." }
+```
+
+Response: `204 No Content`
+
+**GET `/auth/me`**
+Response:
+
+```json
+{ "id": "uuid", "email": "rotorial@admin.com", "fullName": "Admin", "role": "admin", "status": "active" }
+```
+
+**POST `/auth/register`** (somente admin / interno)
+Request:
+
+```json
+{ "email": "user@rotorial.com", "password": "SenhaForte123", "fullName": "Usuário", "role": "operator" }
+```
+
+---
+
+## 🤖 Integração com Firmware (ESP32)
+
+A API fornece endpoints para:
+- Validação e provisionamento de dispositivos
+- Associação de dispositivos a máquinas
+- Envio de dados de telemetria
+
+### Token de Provisionamento
+As chamadas do firmware utilizam um token de autenticação (hackathon):
+
+- Header sugerido: `x-token: santoDeus@1`
+
+O valor deve ser definido via variável `PROVISIONING_TOKEN` e validado no backend.
+
+---
+
+## 📊 Métricas de Dashboard (exemplo)
+
+**GET `/dashboard/metrics?from=<ISO>&to=<ISO>`**
+Exemplo:
+
+```bash
+curl -X GET   "http://localhost:3000/dashboard/metrics?from=2023-01-01T00:00:00.000Z&to=2023-01-31T23:59:59.999Z"   -H "accept: application/json"
+```
+
+Exemplo de resposta:
+
+```json
+{
+  "cards": {
+    "machinesTotal": 12,
+    "patiosTotal": 4,
+    "alarms": {
+      "byStatus": { "open": 3, "ack": 2, "closed": 10 },
+      "bySeverity": { "info": 5, "warn": 7, "crit": 3 },
+      "openBySeverity": { "info": 0, "warn": 2, "crit": 1 }
     }
-  }'
+  },
+  "averages": {
+    "avgVoltageV": 221.7,
+    "avgCurrentA": 12.4,
+    "avgTemperatureC": 49.2
+  },
+  "meta": {
+    "tag": "MTR-001",
+    "powerKw": 15,
+    "voltageNominal": 220,
+    "notes": "Motor da linha 3"
+  }
+}
 ```
 
-### Telemetry Integration
+---
 
-After provisioning, the device should use the machineId returned in the response to send telemetry data:
+## 🚀 Deploy no Render.com (Docker)
 
-```bash
-curl -X POST http://localhost:3000/telemetry \
-  -H "Content-Type: application/json" \
-  -d '{
-    "machineId": "8b70dbcc-5c12-4bf0-a10d-e4e4ef8a2d7e",
-    "ts": "2025-12-26T11:40:10.000-03:00",
-    "voltageV": 221.7,
-    "currentA": 12.4,
-    "temperatureC": 49.2,
-    "seq": 120
-  }'
-```
+1. Criar um serviço Web Service no Render
+2. Selecionar o repositório do backend
+3. Escolher Docker como runtime
+4. Configurar as variáveis do `.env` no painel do Render
+5. Executar o deploy
 
-## Implementation Details
+> Recomenda-se manter o `JWT_SECRET` constante entre deploys para preservar a validade dos tokens existentes.
 
-- Machines are created automatically during device provisioning
-- Dashboard can only update machine status, operator, and metadata
-- Telemetry readings always reference a machine via machineId
-- When telemetry is received, the device's lastSeenAt timestamp is updated
+---
+
+## 🧯 Troubleshooting
+
+| Problema | Causa provável | Solução |
+|---|---|---|
+| `DATABASE_URL` inválida | Falta de `sslmode=require` | Ajustar URL |
+| Erro de conexão no Supabase | Variáveis incorretas | Verificar `.env` |
+| `401` no frontend | Token ausente/inválido | Validar `Authorization: Bearer` |
+| Falha no refresh | Token expirado/inválido | Realizar novo login |
+
+---
+
+<img width=100% src="https://capsule-render.vercel.app/api?type=waving&color=E66C07&height=120&section=footer"/>
