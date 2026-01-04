@@ -1,6 +1,12 @@
 <img width=100% src="https://capsule-render.vercel.app/api?type=waving&color=E66C07&height=120&section=header"/>
 
-# Rotorial – Sistema Embarcado para Monitoramento e Análise Preditiva de Motores Elétricos
+# Rotorial – Sistema Embarcado para Monitoramento e Análise Preditiva de Motores Elétricos <img width='50' heigth='50' src="img/LOGO.png" />
+
+<p align="center">
+    <img width='700' src="img/PROTOTIPO.jpg" alt="exemplo em vídeo">
+</p>
+
+> _Protótipo montado na protoboard para validação inicial_
 
 Este repositório contém o código-fonte completo do **Rotorial**, um sistema embarcado de monitoramento contínuo e análise preditiva de motores elétricos, desenvolvido com foco em **Indústria 4.0**, **manutenção preditiva** e **eficiência energética**.
 
